@@ -1,10 +1,12 @@
 package rootfs
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"code.cloudfoundry.org/eirini/route"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apimachinerytypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	types "k8s.io/client-go/kubernetes/typed/apps/v1beta2"
 )
@@ -16,6 +18,12 @@ type Sink struct {
 	Client    kubernetes.Interface
 	Namespace string
 	Scheduler route.TaskScheduler
+}
+
+type patch struct {
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value string `json:"value"`
 }
 
 func (s *Sink) Watch() {
@@ -37,15 +45,20 @@ func (s *Sink) poll() error {
 		return err
 	}
 
+	payload := []patch{{
+		Op:    "add",
+		Path:  "/spec/template/metadata/labels/eirinifs-digest",
+		Value: string(version),
+	}}
+	payloadBytes, _ := json.Marshal(payload)
+
 	for _, statefulset := range ss.Items {
-		statefulset.Spec.Template.Labels[VersionLabel] = string(version)
-		_, err = s.statefulSets().Update(&statefulset)
+		_, err = s.statefulSets().Patch(statefulset.Name, apimachinerytypes.JSONPatchType, payloadBytes)
 		if err != nil {
 			fmt.Println("Cant update pods")
 			return err
 		}
 	}
-
 	return nil
 }
 
