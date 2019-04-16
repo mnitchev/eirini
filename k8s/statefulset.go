@@ -366,10 +366,16 @@ func (m *StatefulSetDesirer) toStatefulSet(lrp *opi.LRP) *v1beta2.StatefulSet {
 		"source_type":       appSourceType,
 	}
 
+	selectorLabels := map[string]string{
+		"guid":        lrp.GUID,
+		"version":     lrp.Version,
+		"source_type": appSourceType,
+	}
+
 	statefulSet.Spec.Template.Labels = labels
 
 	statefulSet.Spec.Selector = &meta.LabelSelector{
-		MatchLabels: labels,
+		MatchLabels: selectorLabels,
 	}
 
 	statefulSet.Labels = labels
