@@ -8,6 +8,7 @@ import (
 	"code.cloudfoundry.org/eirini/k8s/utils"
 	"code.cloudfoundry.org/eirini/models/cf"
 	"code.cloudfoundry.org/eirini/opi"
+	"code.cloudfoundry.org/eirini/rootfs"
 	"code.cloudfoundry.org/eirini/util"
 	"github.com/pkg/errors"
 	"k8s.io/api/apps/v1beta2"
@@ -29,17 +30,19 @@ type StatefulSetDesirer struct {
 	Namespace             string
 	LivenessProbeCreator  ProbeCreator
 	ReadinessProbeCreator ProbeCreator
+	Digester              *rootfs.Digester
 }
 
 //go:generate counterfeiter . ProbeCreator
 type ProbeCreator func(lrp *opi.LRP) *v1.Probe
 
-func NewStatefulSetDesirer(client kubernetes.Interface, namespace string) opi.Desirer {
+func NewStatefulSetDesirer(client kubernetes.Interface, namespace string, digester *rootfs.Digester) opi.Desirer {
 	return &StatefulSetDesirer{
 		Client:                client,
 		Namespace:             namespace,
 		LivenessProbeCreator:  CreateLivenessProbe,
 		ReadinessProbeCreator: CreateReadinessProbe,
+		Digester:              digester,
 	}
 }
 
@@ -351,10 +354,16 @@ func (m *StatefulSetDesirer) toStatefulSet(lrp *opi.LRP) *v1beta2.StatefulSet {
 		},
 	}
 
+	rootfsDigest, err := m.Digester.Get()
+	if err != nil {
+		fmt.Println("FAILED TO GET EIRINIFS VERSION: ", err)
+	}
+
 	labels := map[string]string{
-		"guid":        lrp.GUID,
-		"version":     lrp.Version,
-		"source_type": appSourceType,
+		"guid":              lrp.GUID,
+		"version":           lrp.Version,
+		rootfs.VersionLabel: string(rootfsDigest),
+		"source_type":       appSourceType,
 	}
 
 	statefulSet.Spec.Template.Labels = labels

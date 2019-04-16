@@ -48,6 +48,7 @@ type Properties struct {
 	RegistryAddress   string `yaml:"registry_address"`
 	EiriniAddress     string `yaml:"eirini_address"`
 	StagerImage       string `yaml:"stager_image"`
+	BitsURL           string `yaml:"bits_url"`
 
 	MetricsSourceAddress string `yaml:"metrics_source_address"`
 	LoggregatorAddress   string `yaml:"loggregator_address"`

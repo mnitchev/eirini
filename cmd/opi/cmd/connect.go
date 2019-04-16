@@ -18,6 +18,7 @@ import (
 	k8sevent "code.cloudfoundry.org/eirini/k8s/informers/event"
 	k8sroute "code.cloudfoundry.org/eirini/k8s/informers/route"
 	"code.cloudfoundry.org/eirini/metrics"
+	"code.cloudfoundry.org/eirini/rootfs"
 	"code.cloudfoundry.org/eirini/route"
 	"code.cloudfoundry.org/eirini/stager"
 	"code.cloudfoundry.org/eirini/util"
@@ -53,8 +54,17 @@ func connect(cmd *cobra.Command, args []string) {
 	}
 
 	cfg := setConfigFromFile(path)
+
+	cfg.Properties.BitsURL = "bits"
+
 	stager := initStager(cfg)
 	bifrost := initBifrost(cfg)
+
+	launchRootfsSink(
+		cfg.Properties.KubeConfigPath,
+		cfg.Properties.BitsURL,
+		cfg.Properties.KubeNamespace,
+	)
 
 	launchRouteEmitter(
 		cfg.Properties.KubeConfigPath,
@@ -139,7 +149,11 @@ func initBifrost(cfg *eirini.Config) eirini.Bifrost {
 	syncLogger.RegisterSink(lager.NewWriterSink(os.Stdout, lager.DEBUG))
 	kubeNamespace := cfg.Properties.KubeNamespace
 	clientset := createKubeClient(cfg.Properties.KubeConfigPath)
-	desirer := k8s.NewStatefulSetDesirer(clientset, kubeNamespace)
+
+	digester := &rootfs.Digester{
+		BitsURL: cfg.Properties.BitsURL,
+	}
+	desirer := k8s.NewStatefulSetDesirer(clientset, kubeNamespace, digester)
 	convertLogger := lager.NewLogger("convert")
 	convertLogger.RegisterSink(lager.NewWriterSink(os.Stdout, lager.DEBUG))
 	registryIP := cfg.Properties.RegistryAddress
@@ -217,6 +231,24 @@ func launchEventReporter(kubeConfigPath, uri, ca, cert, key, namespace string) {
 
 	go crashInformer.Start()
 	go reporter.Run()
+}
+
+func launchRootfsSink(kubeConfigPath, bitsURL, namespace string) {
+	clientset := createKubeClient(kubeConfigPath)
+
+	digester := &rootfs.Digester{
+		BitsURL: bitsURL,
+	}
+
+	duration := time.Duration(10) * time.Second
+	sink := rootfs.Sink{
+		Digester:  digester,
+		Client:    clientset,
+		Namespace: namespace,
+		Scheduler: &route.TickerTaskScheduler{Ticker: time.NewTicker(duration)},
+	}
+
+	go sink.Watch()
 }
 
 func getStagerImage(cfg *eirini.Config) string {
