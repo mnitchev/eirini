@@ -29,9 +29,11 @@ func (s *Sink) poll() error {
 	}
 
 	selector := fmt.Sprintf("%s notin (%s)", VersionLabel, version)
+	fmt.Println(selector)
 	opts := meta.ListOptions{LabelSelector: selector}
 	ss, err := s.statefulSets().List(opts)
 	if err != nil {
+		fmt.Println("Cant find pods")
 		return err
 	}
 
@@ -39,6 +41,7 @@ func (s *Sink) poll() error {
 		statefulset.Spec.Template.Labels[VersionLabel] = string(version)
 		_, err = s.statefulSets().Update(&statefulset)
 		if err != nil {
+			fmt.Println("Cant update pods")
 			return err
 		}
 	}
