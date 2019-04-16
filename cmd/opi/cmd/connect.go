@@ -55,14 +55,14 @@ func connect(cmd *cobra.Command, args []string) {
 
 	cfg := setConfigFromFile(path)
 
-	cfg.Properties.BitsURL = "bits"
+	bitsURL := fmt.Sprintf("https://%s", cfg.Properties.RegistryAddress)
 
 	stager := initStager(cfg)
-	bifrost := initBifrost(cfg)
+	bifrost := initBifrost(cfg, bitsURL)
 
 	launchRootfsSink(
 		cfg.Properties.KubeConfigPath,
-		cfg.Properties.RegistryAddress,
+		bitsURL,
 		cfg.Properties.KubeNamespace,
 	)
 
@@ -144,14 +144,14 @@ func initStager(cfg *eirini.Config) eirini.Stager {
 	return stager.New(taskDesirer, httpClient, stagerCfg)
 }
 
-func initBifrost(cfg *eirini.Config) eirini.Bifrost {
+func initBifrost(cfg *eirini.Config, bitsURL string) eirini.Bifrost {
 	syncLogger := lager.NewLogger("bifrost")
 	syncLogger.RegisterSink(lager.NewWriterSink(os.Stdout, lager.DEBUG))
 	kubeNamespace := cfg.Properties.KubeNamespace
 	clientset := createKubeClient(cfg.Properties.KubeConfigPath)
 
 	digester := &rootfs.Digester{
-		BitsURL: cfg.Properties.RegistryAddress,
+		BitsURL: bitsURL,
 	}
 	desirer := k8s.NewStatefulSetDesirer(clientset, kubeNamespace, digester)
 	convertLogger := lager.NewLogger("convert")
