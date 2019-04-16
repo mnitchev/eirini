@@ -62,7 +62,7 @@ func connect(cmd *cobra.Command, args []string) {
 
 	launchRootfsSink(
 		cfg.Properties.KubeConfigPath,
-		cfg.Properties.BitsURL,
+		cfg.Properties.RegistryAddress,
 		cfg.Properties.KubeNamespace,
 	)
 
@@ -151,7 +151,7 @@ func initBifrost(cfg *eirini.Config) eirini.Bifrost {
 	clientset := createKubeClient(cfg.Properties.KubeConfigPath)
 
 	digester := &rootfs.Digester{
-		BitsURL: cfg.Properties.BitsURL,
+		BitsURL: cfg.Properties.RegistryAddress,
 	}
 	desirer := k8s.NewStatefulSetDesirer(clientset, kubeNamespace, digester)
 	convertLogger := lager.NewLogger("convert")
