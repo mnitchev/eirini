@@ -17,5 +17,10 @@ func (a *Digester) Get() ([]byte, error) {
 		return []byte{}, err
 	}
 
-	return ioutil.ReadAll(resp.Body)
+	digest, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return digest[len(digest)-60 : len(digest)-1], nil
 }
