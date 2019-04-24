@@ -15,6 +15,7 @@ import (
 	"github.com/pkg/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	core "k8s.io/client-go/kubernetes/typed/core/v1"
+	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
 type PodMetricsList struct {
@@ -43,18 +44,18 @@ type Usage struct {
 }
 
 type MetricsCollector struct {
-	work      chan<- []metrics.Message
-	source    string
-	scheduler route.TaskScheduler
-	podClient core.PodInterface
+	work          chan<- []metrics.Message
+	metricsClient metricsclientset.Interface
+	scheduler     route.TaskScheduler
+	podClient     core.PodInterface
 }
 
-func NewMetricsCollector(work chan []metrics.Message, scheduler route.TaskScheduler, source string, podClient core.PodInterface) *MetricsCollector {
+func NewMetricsCollector(work chan []metrics.Message, scheduler route.TaskScheduler, metricsClient metricsclientset.Interface, podClient core.PodInterface) *MetricsCollector {
 	return &MetricsCollector{
-		work:      work,
-		source:    source,
-		scheduler: scheduler,
-		podClient: podClient,
+		work:          work,
+		metricsClient: metricsClient,
+		scheduler:     scheduler,
+		podClient:     podClient,
 	}
 }
 
@@ -101,7 +102,15 @@ func collectMetrics(source string) (*PodMetricsList, error) {
 }
 
 func (c *MetricsCollector) convertMetricsList(metricList *PodMetricsList) ([]metrics.Message, error) {
-	messages := []metrics.Message{}
+	metricsClient, err := metricsclientset.Clientset{}
+	if err != nil {
+		return []metrics.Message{}, err
+	}
+	metricList, err := metricsClient.MetricsV1beta1().PodMetricses(ns).Get(resourceName, metav1.GetOptions{})
+	if err != nil {
+		return []metrics.Message{}, err
+	}
+
 	for _, metric := range metricList.Items {
 		if len(metric.Containers) == 0 {
 			continue
