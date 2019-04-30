@@ -1,100 +1,80 @@
 package k8s
 
 import (
-	"fmt"
-	"regexp"
-	"strconv"
-	"strings"
-
 	"code.cloudfoundry.org/eirini/metrics"
 	"code.cloudfoundry.org/eirini/route"
-	"github.com/pkg/errors"
+	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/metrics/pkg/apis/metrics/v1beta1"
-	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
+	typedv1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	metricsv1beta1api "k8s.io/metrics/pkg/apis/metrics/v1beta1"
+	metricsv1beta1 "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
 )
 
 type MetricsCollector struct {
 	work          chan<- []metrics.Message
-	metricsClient metricsclientset.Interface
+	metricsClient metricsv1beta1.PodMetricsInterface
+	podClient     typedv1.PodInterface
 	scheduler     route.TaskScheduler
-	namespace     string
 }
 
-func NewMetricsCollector(work chan []metrics.Message, scheduler route.TaskScheduler, metricsClient metricsclientset.Interface) *MetricsCollector {
+func NewMetricsCollector(work chan []metrics.Message, scheduler route.TaskScheduler, metricsClient metricsv1beta1.PodMetricsInterface, podClient typedv1.PodInterface) *MetricsCollector {
 	return &MetricsCollector{
 		work:          work,
 		metricsClient: metricsClient,
 		scheduler:     scheduler,
+		podClient:     podClient,
 	}
 }
 
 func (c *MetricsCollector) Start() {
 	c.scheduler.Schedule(func() error {
-		_, err := c.metricsClient.MetricsV1beta1().PodMetricses(c.namespace).List(metav1.ListOptions{})
-		if err != nil {
-			return err //todo: wrap
+		metrics, _ := c.metricsClient.List(metav1.ListOptions{})
+		messages, _ := c.convertMetricsList(metrics)
+		// if err != nil {
+		// 	return err //todo: wrap
+		// }
+
+		if len(messages) > 0 {
+			c.work <- messages
 		}
+
 		return nil
 	})
 }
 
-func (c *MetricsCollector) convertMetricsList(podMetrics *v1beta1.PodMetricsList) ([]metrics.Message, error) {
-	//for _, metric := range podMetrics.Items {
-	//if len(metric.Containers) == 0 {
-	//continue
-	//}
-	//container := metric.Containers[0]
-	//_, indexID, err := util.ParseAppNameAndIndex(metric.Metadata.Name)
-	//if err != nil {
-	//return nil, err
-	//}
-	//cpuValue, err := extractValue(container.Usage.CPU)
-	//if err != nil {
-	//return nil, errors.Wrap(err, "Failed to convert cpu value")
-	//}
-	//memoryValue, err := extractValue(container.Usage.Memory)
-	//if err != nil {
-	//return nil, errors.Wrap(err, "Failed to convert memory values")
-	//}
+func (c *MetricsCollector) convertMetricsList(podMetrics *metricsv1beta1api.PodMetricsList) ([]metrics.Message, error) {
+	messages := []metrics.Message{}
+	for _, metric := range podMetrics.Items {
+		if len(metric.Containers) == 0 {
+			continue
+		}
+		container := metric.Containers[0]
+		// _, indexID, _ := util.ParseAppNameAndIndex(metric.Name)
+		// if err != nil {
+		// 	return nil, err
+		// }
+		usage := container.Usage
+		res := usage[apiv1.ResourceCPU]
+		cpuValue := res.MilliValue()
+		res = usage[apiv1.ResourceMemory]
+		memoryValue := res.Value() / 1024
 
-	//pod, err := c.podClient.Get(metric.Metadata.Name, meta.GetOptions{})
-	//if err != nil {
-	//return []metrics.Message{}, err
-	//}
+		// pod, _ := c.podClient.Get(metric.Name, metav1.GetOptions{})
+		// if err != nil {
+		// 	return []metrics.Message{}, err
+		// }
 
-	//messages = append(messages, metrics.Message{
-	//AppID:       pod.Labels["guid"],
-	//IndexID:     strconv.Itoa(indexID),
-	//CPU:         convertCPU(cpuValue),
-	//Memory:      convertMemory(memoryValue),
-	//MemoryQuota: 10,
-	//Disk:        42000000,
-	//DiskQuota:   10,
-	//})
-	//}
-	//return messages, nil
-	return []metrics.Message{}, nil
-}
-
-func extractValue(metric string) (float64, error) {
-	re := regexp.MustCompile("[a-zA-Z]+")
-	match := re.FindStringSubmatch(metric)
-	if len(match) == 0 {
-		f, err := strconv.ParseFloat(metric, 64)
-		return f, errors.Wrap(err, fmt.Sprintf("failed to parse metric %s", metric))
+		messages = append(messages, metrics.Message{
+			// AppID:       pod.Labels["guid"],
+			AppID: "guid",
+			// IndexID:     strconv.Itoa(indexID),
+			IndexID:     "0",
+			CPU:         float64(cpuValue),
+			Memory:      float64(memoryValue),
+			MemoryQuota: 10,
+			Disk:        42000000,
+			DiskQuota:   10,
+		})
 	}
-
-	unit := match[0]
-	valueStr := strings.Trim(metric, unit)
-
-	return strconv.ParseFloat(valueStr, 64)
-}
-
-func convertCPU(cpuUsage float64) float64 {
-	return cpuUsage / 1000
-}
-
-func convertMemory(memoryUsage float64) float64 {
-	return memoryUsage * 1024
+	return messages, nil
 }
